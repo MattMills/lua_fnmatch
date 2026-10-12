@@ -446,6 +446,44 @@ int signature_constant(lua_State *L)
 }
 
 //////////////////////////////////////////////////
+// instructions
+
+// decode(bytes [, address [, position]]) -> instruction | nil: the x64 instruction at `position`
+// (1-based, default 1) of `bytes`, whose first byte is at `address` (default 0)
+int decode_instruction(lua_State *L)
+{
+    size_t size = 0;
+    const char *bytes = luaL_checklstring(L, 1, &size);
+    const uint64_t address = lua_isnoneornil(L, 2) ? 0 : check_address(L, 2);
+    const uint64_t position = lua_isnoneornil(L, 3) ? 1 : check_unsigned(L, 3, size + 1, "position");
+    fnme_instruction instruction{};
+    char text[160];
+    const uint32_t length = position < 1 || position > size ? 0
+        : fnme_decode(reinterpret_cast<const uint8_t *>(bytes) + position - 1, size - (position - 1),
+              address + position - 1, &instruction, text, sizeof(text));
+    if (length == 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+    static const char *const flows[] = {"next", "branch", "indirect_branch", "conditional_branch", "return",
+        "call", "indirect_call", "interrupt", "xbegin", "exception"};
+    lua_createtable(L, 0, 5);
+    push_unsigned(L, length);
+    lua_setfield(L, -2, "length");
+    lua_pushstring(L, flows[instruction.flow <= FNME_FLOW_EXCEPTION ? instruction.flow : FNME_FLOW_EXCEPTION]);
+    lua_setfield(L, -2, "flow");
+    lua_pushboolean(L, instruction.rip_relative);
+    lua_setfield(L, -2, "rip_relative");
+    if (instruction.target != 0) {
+        push_unsigned(L, instruction.target);
+        lua_setfield(L, -2, "target");
+    }
+    lua_pushstring(L, text);
+    lua_setfield(L, -2, "text");
+    return 1;
+}
+
+//////////////////////////////////////////////////
 // options
 //
 
@@ -1178,6 +1216,7 @@ extern "C" LUA_FNMATCH_API int luaopen_fnmatch(lua_State *L)
         {"file", image_file},
         {"image", image_from_string},
         {"sig_file", sigfile_open},
+        {"decode", decode_instruction},
         {nullptr, nullptr}};
     lua_newtable(L);
     compat::setfuncs(L, functions);

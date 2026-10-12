@@ -14,6 +14,8 @@ path = "src/lib.rs"
 stellar-fnmatch = { path = "../lib/stellar-fnmatch" }
 md-5 = "0.10"
 rayon = "1"
+# fnme_decode; the version and features stellar-fnmatch uses
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "intel"] }
 
 [profile.release]
 opt-level = 3

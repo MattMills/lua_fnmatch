@@ -124,6 +124,34 @@ int fnme_sig_thunk_to(const char *name, size_t len, uint64_t *out, char *err, si
 uint64_t fnme_sig_immediate(uint64_t value);
 int fnme_sig_constant(const uint8_t *bytes, size_t len, uint64_t *out, char *err, size_t err_size);
 
+/* ---- instructions ---- */
+
+/* flow control of an instruction (iced-x86 FlowControl) */
+#define FNME_FLOW_NEXT 0
+#define FNME_FLOW_BRANCH 1
+#define FNME_FLOW_INDIRECT_BRANCH 2
+#define FNME_FLOW_CONDITIONAL_BRANCH 3
+#define FNME_FLOW_RETURN 4
+#define FNME_FLOW_CALL 5
+#define FNME_FLOW_INDIRECT_CALL 6
+#define FNME_FLOW_INTERRUPT 7
+#define FNME_FLOW_XBEGIN 8    /* xbegin, xabort, xend */
+#define FNME_FLOW_EXCEPTION 9 /* ud2 and the like */
+
+typedef struct fnme_instruction
+{
+    uint64_t target;      /* near branch or call target, or the address a RIP-relative operand
+                             refers to; 0 otherwise */
+    uint32_t length;
+    uint8_t flow;         /* FNME_FLOW_* */
+    uint8_t rip_relative; /* 1 when a memory operand is relative to RIP */
+} fnme_instruction;
+
+/* Decodes the x64 instruction at the start of `code` (`size` bytes), at address `ip`. Returns its
+ * length, 0 if the bytes do not start with a whole valid instruction. `out` and `text` (Intel
+ * syntax, copied like snprintf) may be NULL. */
+uint32_t fnme_decode(const uint8_t *code, size_t size, uint64_t ip, fnme_instruction *out, char *text, size_t text_size);
+
 #ifdef __cplusplus
 }
 #endif

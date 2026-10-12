@@ -220,6 +220,21 @@ with `rva` and `end_rva` instead of addresses.
 
 An image's `signatures(address)` and the `.sig` file of the same build give the same signatures.
 
+### Instructions
+
+```lua
+local i = fnmatch.decode(bytes [, address [, position]])
+-- { length = 5, flow = "next", rip_relative = false, text = "mov [rsp+8],rbx" }
+```
+
+The x64 instruction at `position` (1-based, default 1) of a string of bytes whose first byte is at
+`address` (default 0), decoded with iced-x86 (the decoder stellar-fnmatch uses), or nil when the
+bytes there are not a whole valid instruction. `flow` is `next`, `branch`, `indirect_branch`,
+`conditional_branch`, `return`, `call`, `indirect_call`, `interrupt`, `xbegin` or `exception`;
+`target` is the target of a near branch or call, or the address a RIP-relative operand refers to;
+`text` is Intel syntax. C hosts get the same from `fnme_decode` (`fnmatch_engine.h`), e.g. to find
+whole instructions to move out of the way of a hook.
+
 ### Bundles: register hooks, resolve them all, install them together
 
 ```lua
