@@ -1,0 +1,6 @@
+[submodule "lua_fnmatch/lib/luajit"]
+	path = lua_fnmatch/lib/luajit
+	url = https://github.com/MattMills/LuaJIT.git
+[submodule "lua_fnmatch/lib/stellar-fnmatch"]
+	path = lua_fnmatch/lib/stellar-fnmatch
+	url = https://github.com/MattMills/stellar-fnmatch.git

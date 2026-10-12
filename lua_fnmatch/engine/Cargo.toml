@@ -1,0 +1,22 @@
+[package]
+name = "lua_fnmatch_engine"
+version = "0.1.0"
+edition = "2021"
+description = "C ABI over stellar-fnmatch for the lua_fnmatch bindings"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+stellar-fnmatch = { path = "../lib/stellar-fnmatch" }
+md-5 = "0.10"
+rayon = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+panic = "unwind"

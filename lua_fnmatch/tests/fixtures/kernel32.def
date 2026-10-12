@@ -1,0 +1,8 @@
+LIBRARY kernel32.dll
+EXPORTS
+    lstrlenA
+    lstrlenW
+    GetTickCount
+    Sleep
+    GetCurrentProcessId
+    OutputDebugStringA
