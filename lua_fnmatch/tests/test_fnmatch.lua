@@ -230,6 +230,27 @@ test("signatures from facts", function()
     raises(function() fn.signature.thunk_to("") end, "not a function name")
 end)
 
+test("decode", function()
+    local i = fn.decode("\72\137\92\36\8") -- mov [rsp+8], rbx
+    eq(i.length, 5)
+    eq(i.flow, "next")
+    eq(i.rip_relative, false)
+    eq(i.target, nil)
+    eq(i.text, "mov [rsp+8],rbx")
+    i = fn.decode("\232\0\0\0\0", 4096) -- call to the next instruction
+    eq(i.flow, "call")
+    eq(i.target, 4101)
+    i = fn.decode("\72\139\5\16\0\0\0", 8192) -- mov rax, [rip+0x10]
+    eq(i.rip_relative, true)
+    eq(i.target, 8192 + 7 + 16)
+    i = fn.decode("\144\195", 16, 2) -- nop; ret: the ret, at 17
+    eq(i.flow, "return")
+    eq(i.length, 1)
+    eq(fn.decode("\235\254", 32).target, 32) -- jmp to itself
+    eq(fn.decode("\72"), nil) -- not a whole instruction
+    eq(fn.decode("\144", 0, 2), nil) -- past the end
+end)
+
 --------------------------------------------------
 -- images
 --

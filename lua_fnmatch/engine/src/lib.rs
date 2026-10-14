@@ -742,3 +742,60 @@ pub unsafe extern "C" fn fnme_sig_constant(b: *const u8, len: usize, out: *mut u
         Ok(1)
     })
 }
+
+// ---- instructions ----
+
+/// One x64 instruction, from `fnme_decode`.
+#[repr(C)]
+pub struct FnmeInstruction {
+    /// the target of a near branch or call, or the address a RIP-relative memory operand refers
+    /// to; 0 otherwise
+    pub target: u64,
+    pub length: u32,
+    /// FNME_FLOW_*: iced-x86's flow control
+    pub flow: u8,
+    /// 1 when a memory operand is relative to RIP
+    pub rip_relative: u8,
+}
+
+/// Decodes the instruction at the start of `code` (`size` bytes) at address `ip`. Returns its
+/// length, 0 if the bytes do not start with a whole valid instruction. `text` (if not null) gets
+/// it in Intel syntax.
+#[no_mangle]
+pub unsafe extern "C" fn fnme_decode(code: *const u8, size: usize, ip: u64, out: *mut FnmeInstruction, text: *mut c_char, text_size: usize) -> u32 {
+    use iced_x86::{Decoder, DecoderOptions, FlowControl, Formatter, IntelFormatter};
+    quiet(0, || {
+        let bytes = if code.is_null() || size == 0 { &[][..] } else { std::slice::from_raw_parts(code, size.min(15)) };
+        let instruction = Decoder::with_ip(64, bytes, ip, DecoderOptions::NONE).decode();
+        if instruction.is_invalid() {
+            return 0;
+        }
+        let flow = match instruction.flow_control() {
+            FlowControl::Next => 0,
+            FlowControl::UnconditionalBranch => 1,
+            FlowControl::IndirectBranch => 2,
+            FlowControl::ConditionalBranch => 3,
+            FlowControl::Return => 4,
+            FlowControl::Call => 5,
+            FlowControl::IndirectCall => 6,
+            FlowControl::Interrupt => 7,
+            FlowControl::XbeginXabortXend => 8,
+            _ => 9,
+        };
+        let rip_relative = instruction.is_ip_rel_memory_operand();
+        if let Some(o) = out.as_mut() {
+            *o = FnmeInstruction {
+                target: if rip_relative { instruction.ip_rel_memory_address() } else { instruction.near_branch_target() },
+                length: instruction.len() as u32,
+                flow,
+                rip_relative: rip_relative as u8,
+            };
+        }
+        if !text.is_null() {
+            let mut s = String::new();
+            IntelFormatter::new().format(&instruction, &mut s);
+            put_str(&s, text, text_size);
+        }
+        instruction.len() as u32
+    })
+}
