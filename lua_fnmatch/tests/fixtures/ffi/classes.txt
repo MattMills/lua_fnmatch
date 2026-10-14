@@ -1,0 +1,15 @@
+Vec2
+Big
+Handle
+Counted
+Bits
+Packed
+WithUnion
+Color
+FfxError
+Base
+Other
+Derived
+HandleD
+HandleC
+WithDtor

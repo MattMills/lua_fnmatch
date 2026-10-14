@@ -5,11 +5,16 @@
 # preloaded) and the fixtures directory.
 
 set(test_script "${CMAKE_CURRENT_SOURCE_DIR}/test_fnmatch.lua")
+set(ffi_test_script "${CMAKE_CURRENT_SOURCE_DIR}/test_ffi.lua")
 set(fixtures "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 if (lua_interpreter AND TARGET lua_fnmatch)
   add_test(NAME lua_fnmatch_module
     COMMAND "${lua_interpreter}" "${test_script}" "$<TARGET_FILE_DIR:lua_fnmatch>" "${fixtures}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  add_test(NAME lua_fnmatch_ffi
+    COMMAND "${lua_interpreter}" "${ffi_test_script}" "$<TARGET_FILE_DIR:lua_fnmatch>" "${fixtures}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 else()
@@ -34,6 +39,10 @@ if (lua_link_library)
 
   add_test(NAME lua_fnmatch_embedded
     COMMAND lua_fnmatch_embed_host "${test_script}" "" "${fixtures}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  add_test(NAME lua_fnmatch_ffi_embedded
+    COMMAND lua_fnmatch_embed_host "${ffi_test_script}" "" "${fixtures}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 else()

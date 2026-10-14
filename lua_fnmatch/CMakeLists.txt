@@ -169,15 +169,18 @@ endif()
 # bundle.lua (fnmatch.bundle) is compiled into the module as a byte array
 #
 
-set(embedded_lua_source "${CMAKE_CURRENT_SOURCE_DIR}/bundle.lua")
-set(embedded_lua_name "lua_fnmatch_bundle_lua")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${embedded_lua_source}")
-file(READ "${embedded_lua_source}" embedded_lua_hex HEX)
-string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," embedded_lua_bytes "${embedded_lua_hex}")
-string(REPEAT "0x..," 16 embedded_lua_line) # CMake regexes have no {n}
-string(REGEX REPLACE "(${embedded_lua_line})" "\\1\n" embedded_lua_bytes "${embedded_lua_bytes}")
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/embedded_lua.h.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/generated/lua_fnmatch_bundle.h" @ONLY)
+# (and ffi.lua, fnmatch.ffi, the same way)
+foreach(embedded_lua bundle ffi)
+  set(embedded_lua_source "${CMAKE_CURRENT_SOURCE_DIR}/${embedded_lua}.lua")
+  set(embedded_lua_name "lua_fnmatch_${embedded_lua}_lua")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${embedded_lua_source}")
+  file(READ "${embedded_lua_source}" embedded_lua_hex HEX)
+  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," embedded_lua_bytes "${embedded_lua_hex}")
+  string(REPEAT "0x..," 16 embedded_lua_line) # CMake regexes have no {n}
+  string(REGEX REPLACE "(${embedded_lua_line})" "\\1\n" embedded_lua_bytes "${embedded_lua_bytes}")
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/embedded_lua.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/lua_fnmatch_${embedded_lua}.h" @ONLY)
+endforeach()
 
 #
 # Build settings shared by the module and the static library. Linked privately: consumers of
