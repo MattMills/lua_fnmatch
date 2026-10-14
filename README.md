@@ -261,11 +261,15 @@ then name a `module`). Options:
 | `offset` | added to every function address, default `0` |
 | `required` | default `true`; a missing optional entry is skipped instead of failing the run |
 | `priority` | callbacks run by ascending priority (default `0`), then in registration order |
-| `callback(address, entry)` | `address` is the first function plus `offset` |
+| `callback(address, entry, fn)` | `address` is the first function plus `offset`; `fn` the typed function, with bindings |
+| `ffi` | `fnmatch.ffi` bindings for this entry (default: the bundle option `ffi`), or `false` |
+| `declaration` | with bindings: which declaration of `name` (an index, the RVA in the bindings' build, or the declaration); default: the only one |
+| `protect` | with bindings: passed to `bindings:fn` |
 
 After `run()`, an entry has `found`, `address`, `matches` (offset applied), `functions` (the
 function addresses), `signature` and `alternative` (the one that matched), `image`, and `error` (why
-it wasn't found).
+it wasn't found); with bindings also `fn` (the typed function at `address`) and `declaration` (its
+metadata). An entry with bindings needs a `name` that the bindings declare; `register` checks it.
 
 `bundle:run()` can be called once:
 
@@ -280,6 +284,88 @@ it wasn't found).
 
 The report has `ok`, `entries`, `failed` (required entries that weren't found), `skipped`
 (optional ones), `images` (how many images the entries used), `rounds` and `error`.
+
+### Typed functions and classes: fnmatch.ffi
+
+`stellar-fnmatch cdef` writes, from a build's PDB, a Lua module of LuaJIT FFI declarations: classes
+with every data member at its PDB offset, and functions declared for the MSVC x64 calling
+convention, with their vtable slots and whether they may throw (stellar-fnmatch's
+[docs/ffi.md](https://github.com/MattMills/stellar-fnmatch/blob/main/docs/ffi.md) has the rules and
+how they were checked). `fnmatch.ffi` (pure Lua, `ffi.lua`) uses it:
+
+```lua
+local b = assert(fnmatch.ffi.load("gog-4.5.2.ffi.lua"))   -- or the module's table
+
+local hooks = fnmatch.bundle(fnmatch.module("stellaris.exe"), { ffi = b })
+hooks:register({
+    name = "CTextLexer::GetTok",
+    signatures = reference:signatures("CTextLexer::GetTok"),
+    callback = function(address, entry, get_tok)    -- get_tok: int32_t (*)(CTextLexer *)
+        lexer_get_tok = get_tok
+    end,
+})
+
+local obj = ffi.cast(b:ptr("CNamedColor"), p)   -- p: an object the game made
+print(obj._Index)                                -- a member of a base (TGameDatabaseObject)
+local persistent = b:cast(obj, "CPersistent")    -- the base subobject at +0x40
+local copy = b:type("CNamedColor")()             -- a ctype, declared with what it needs
+local n = b:vcall(lexer, "CTextLexer::GetTok")   -- a virtual call through the object's vtable
+```
+
+| Function | |
+|---|---|
+| `fnmatch.ffi.load(path or table [, options])` | bindings for a generated module, or nil and a message; `options.protect` is the default of `fn` |
+| `fnmatch.ffi.available` | false without the LuaJIT FFI: then every function raises "the LuaJIT FFI is not available" |
+| `fnmatch.ffi.protect(f)` | a Lua function that calls `f` and is never compiled |
+| `b:type(name)`, `b:ptr(name)` | the ctype of a class, struct, union or enum (C or C++ name), or of a pointer to it (opaque is enough) |
+| `b:declare(name [, complete])` | declares it (and everything it needs), returns its C name |
+| `b:info(name)`, `b:field(name, member)`, `b:enum(name)` | metadata: size, fields (offset, C++ type, bits), bases, vfptrs; enum values both ways |
+| `b:cast(object, base [, from])` | a pointer to the base class subobject of a pointer to a class of the module |
+| `b:getbits(object, type, field)`, `b:setbits(...)` | bitfields LuaJIT cannot declare (in a 64-bit unit, across bit 32) |
+| `b:functions(name)`, `b:func(name [, which])` | the declarations of a function (overloads, folded copies), or one: `which` is an index, the RVA in the module's build, or the declaration |
+| `b:fntype(name [, which])` | the ctype of its function pointer, with its types declared |
+| `b:fn(name, address [, which [, options]])` | the typed function at `address`, and its declaration; `options.protect = true` wraps it (`"throws"`: only functions that may throw) |
+| `b:vfn(object, name [, which])` | the virtual method from the object's vtable, and the `this` to pass (the subobject that holds the vfptr); for a destructor the deleting destructor, `fn(this, 1)` frees the object |
+| `b:vcall(object, name, ...)` | calls it |
+
+- **Declared on demand.** A Lua state has room for 65,536 ctypes; all of 4.5.2's types make
+  563,268. `type`, `fn` and the bundle declare a type with its closure the first time it is used
+  (types used only through pointers as `struct X;`), in one `ffi.cdef`.
+- **One module per name.** Types are recorded per Lua state with the module (PDB) that declared
+  them; another module that wants the same C name fails with a message (generate one of them with
+  `--prefix`).
+- **What the declarations change** from the C++ signature is in each declaration's `rewrites`: a
+  class result through a hidden pointer (after `this` for methods, first otherwise: pass a
+  buffer, the function returns it), a by-value class as a pointer to a copy that the callee destroys,
+  `this` as the base subobject for an override through a secondary base, the deleting destructor in
+  a virtual destructor's slot.
+- **Floats, varargs.** `float` and `double` parameters work as declared. Variadic functions take
+  integers as cdata (`ffi.new("int32_t", 3)`): a Lua number goes as a `double`.
+
+#### C++ exceptions
+
+`throws` in a declaration says whether the function may throw a C++ exception (`"yes"`,
+`"maybe"`: only through virtual or indirect calls, `"no"`), and `via` what kind. The LuaJIT
+documentation says C++ exception interoperability "does not extend to C functions called via the
+FFI, if the call is compiled". Measured on Windows x64 with this repository's LuaJIT (2.1 at
+6f54a53, which stellarstellaris-win builds too) and an MSVC-built DLL (`tests/ffi_exceptions.ps1`,
+each case in its own process):
+
+| the FFI call that throws | standalone `luajit.exe` | C++ host, `/EHsc` | C++ host, `/EHs` |
+|---|---|---|---|
+| interpreted, under `pcall` | caught: "C++ exception" | caught by the `pcall` | caught by the `pcall` |
+| compiled in a trace (`CALLXS` in the IR), under `pcall` | caught | caught | caught |
+| through `fnmatch.ffi.protect`, or a function under `jit.off`, under `pcall` | caught | caught | caught |
+| no `pcall` (interpreted or compiled) | `lua_pcall` of `luajit.exe` reports "C++ exception" | the process ends (0xC0000409) | the host's `catch (FfxError&)` gets the original exception |
+
+After each catch the Lua state works. So:
+- a `pcall` around a call that may throw turns the exception into the Lua error "C++ exception"
+  (the C++ exception object is destroyed), whether or not the call is compiled: Windows x64 builds
+  of this LuaJIT unwind through traces (`LJ_UNWIND_JIT`);
+- without one the exception goes to the C++ code that called into Lua; that code must be compiled
+  with `/EHs` or `/EHa`: with `/EHsc` the compiler assumes `lua_call` cannot throw and drops the
+  `catch`;
+- `protect` is for LuaJIT builds without unwinding through traces.
 
 ## Choosing signatures
 
@@ -343,6 +429,22 @@ build adds, changes and removes functions, and everything moves. The suite cover
 
 It passes on Linux with LuaJIT, Lua 5.1 and Lua 5.4 (GCC, also under ASan + UBSan), and on Windows
 with MSVC 2022 (Release, Debug, and the static CRT).
+
+`ctest` also runs `lua_fnmatch/tests/test_ffi.lua` both ways. Its fixture,
+`lua_fnmatch/tests/fixtures/ffi`, is a DLL built with MSVC (`ffi_fixture.cpp`,
+`build_ffi_fixture.cmd`), its PDB, and the declarations `stellar-fnmatch cdef` generated from them
+(`ffi_fixture.ffi.lua`). The C++ code has the cases the declarations must get right: results of 8
+and 24 bytes, POD and not, from functions, methods and static methods; classes by value with a copy
+constructor, a defaulted copy constructor, a move constructor (user-provided and defaulted) or only
+a destructor; floats and integers by position, past the fourth; varargs; bitfields in units of 1,
+2, 4 and 8 bytes (one across bit 32); `#pragma pack`; an anonymous union with an anonymous struct; an
+enum; two vfptrs and an override through the second; a throwing function. The test checks every
+layout under the running LuaJIT, the rules each declaration records, the type registry, bundles
+with typed functions, and on Windows calls everything (the results come from the C++ code) and
+catches a C++ exception through an FFI call. Without the FFI (Lua 5.x) it checks the errors. 476
+checks on Windows; it passes on Linux with LuaJIT, Lua 5.1.5 and 5.4.7, and on Windows with MSVC
+2022. `ffi_exceptions.ps1` is the exception experiment above (not part of `ctest`: some cases end
+the process).
 
 ## License
 
