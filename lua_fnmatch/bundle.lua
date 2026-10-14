@@ -34,6 +34,8 @@ end
 --   source:  an image, the default of every entry; without it, entries name a `module`
 --   options: cache, threads: how run() analyses modules (as in fnmatch.module),
 --            keep_images: keep the images run() opened (default: closed when run() returns),
+--            ffi: fnmatch.ffi bindings (fnmatch.ffi.load): every entry also gets its typed
+--                 function (entry.fn, and the callback's third argument)
 --            before(report), after(report): called around the callbacks
 function fnmatch.bundle(source, options)
     if options == nil and type(source) == "table" then
@@ -95,10 +97,15 @@ end
 --   offset                added to every function address (default 0)
 --   required              if false, a missing entry is skipped instead of failing the run
 --   priority              callbacks run by ascending priority (default 0), then in order
---   callback(address, entry)
+--   callback(address, entry, fn)
+--   ffi                   fnmatch.ffi bindings for this entry (default: the bundle's), or false
+--   declaration           which of the bindings' declarations of `name` (an index, the RVA in
+--                         the bindings' build, or the declaration); default: the only one
+--   protect               passed to bindings:fn (wrap a function that may throw)
 --
 -- The returned entry is filled in by run(): found, address, matches, functions, signature,
--- alternative, image, error.
+-- alternative, image, error, and with bindings fn (the typed function at `address`, which the
+-- callback also gets) and declaration (its metadata).
 function bundle:register(spec)
     if self._ran then
         fail("register() after run(), a bundle runs only once", 2)
@@ -162,6 +169,27 @@ function bundle:register(spec)
         fail(name .. ": no image, give image or module (or create the bundle with an image)", 2)
     end
 
+    -- typed function: the declaration must exist now, so that a wrong name fails here
+    local bindings = spec.ffi
+    if bindings == nil then
+        bindings = self._options.ffi
+    end
+    if bindings == false then
+        bindings = nil
+    end
+    if bindings ~= nil then
+        if type(bindings) ~= "table" or type(bindings.func) ~= "function" then
+            fail(name .. ": ffi must be fnmatch.ffi bindings (fnmatch.ffi.load)", 2)
+        end
+        if spec.name == nil then
+            fail("#" .. index .. ": an entry with ffi bindings needs the function's name", 2)
+        end
+        local d, err = bindings:func(spec.name, spec.declaration)
+        if d == nil then
+            fail(name .. ": " .. tostring(err), 2)
+        end
+    end
+
     local entry = {
         name = name,
         signatures = signatures,
@@ -174,6 +202,9 @@ function bundle:register(spec)
         _symbol = spec.name,
         _index = index,
         _region = region,
+        _ffi = bindings,
+        _declaration = spec.declaration,
+        _protect = spec.protect,
     }
     self._entries[index] = entry
     return entry
@@ -311,6 +342,19 @@ function bundle:run()
         return report
     end
 
+    -- the typed functions, before any callback runs
+    for _, entry in ipairs(self._entries) do
+        if entry.found and entry._ffi ~= nil then
+            local ok, fn, d = pcall(entry._ffi.fn, entry._ffi, entry._symbol, entry.address, entry._declaration,
+                entry._protect ~= nil and { protect = entry._protect } or nil)
+            if not ok then
+                release()
+                fail(string.format("typed function of %s: %s", entry.name, tostring(fn)), 2)
+            end
+            entry.fn, entry.declaration = fn, d
+        end
+    end
+
     local ordered = {}
     for _, entry in ipairs(self._entries) do
         if entry.found and entry.callback ~= nil then
@@ -332,7 +376,7 @@ function bundle:run()
         end
     end
     for _, entry in ipairs(ordered) do
-        local ok, err = pcall(entry.callback, entry.address, entry)
+        local ok, err = pcall(entry.callback, entry.address, entry, entry.fn)
         if not ok then
             if options.after ~= nil then
                 pcall(options.after, report)

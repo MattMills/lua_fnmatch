@@ -1,0 +1,33 @@
+ffx_vec
+ffx_big
+ffx_handle
+ffx_take_handle
+ffx_take_counted
+ffx_take_big
+ffx_take_vec
+ffx_mix
+ffx_sum
+ffx_bits
+ffx_union
+ffx_packed
+ffx_color
+ffx_new_derived
+ffx_delete
+ffx_call_value
+ffx_throw_if
+ffx_catch
+Base::Value
+Base::Add
+Other::Other1
+Derived::Value
+Derived::Other1
+Derived::Scale
+Derived::GetVec
+Derived::GetBig
+Derived::MakeVec
+Derived::MakeHandle
+Derived::`scalar deleting destructor'
+Base::`scalar deleting destructor'
+ffx_take_handle_d
+ffx_take_handle_c
+ffx_take_with_dtor
